@@ -58,13 +58,8 @@ async getImage(@Res() res:Response){
  @Delete(':name')
  @HttpCode(204)
  async deleteCountry(@Param('name') name:string){
-      const deleted = await this.countryService.deleteCountry(name)
-      if(!deleted){
-           throw new NotFoundException(`Country with Name ${name} not found`);
-      }
-      return {
-        message:"Country deleted successfully"
-      }
+    return await this.countryService.deleteCountry(name)
+     
  }
 
 }

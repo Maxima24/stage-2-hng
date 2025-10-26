@@ -37,6 +37,7 @@ export interface ExchangeRateData {
   base_code: string;
   rates: Record<string, number>;
 }
+
 export interface TopCountries {
   name: string;
   estimated_gdp: number | null;
@@ -62,11 +63,13 @@ export class CountriesService {
     this.logger.log(`📍 COUNTRY_DATA_API: ${this.api_countries}`);
     this.logger.log(`📍 EXCHANGE_RATE_URL: ${this.api_exchange_rate}`);
   }
+
   private ensureCacheDir() {
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
     }
   }
+
   private async generateSummaryImage() {
     // Get total count
     const totalCountries = await this.db.country.count();
@@ -98,19 +101,20 @@ export class CountriesService {
     totalCountries: number,
     topCountries: TopCountries[],
   ): string {
-    const yPos = 210; // starting vertical position for the country list
-    const lineSpacing = 40; // space between each country line
+    const yPos = 210;
+    const lineSpacing = 40;
     const width = 800;
     const height = yPos + topCountries.length * lineSpacing + 100;
     const timestamp = new Date().toLocaleString();
 
     const countryItems = topCountries
       .map((country, index) => {
-        const gdpBillions = (country.estimated_gdp! / 1e9).toFixed(2);
+        const gdpBillions = ((country.estimated_gdp || 0) / 1e9).toFixed(2);
         const y = yPos + index * lineSpacing;
+        const capitalizedName = this.capitalizeFirstWord(country.name);
         return `
       <text x="60" y="${y}" font-family="Arial" font-size="18" fill="#ffffff">
-        ${index + 1}. ${country.name}: $${gdpBillions}B
+        ${index + 1}. ${capitalizedName}: $${gdpBillions}B
       </text>
     `;
       })
@@ -168,16 +172,21 @@ export class CountriesService {
   private calculateEstimatedGdp(
     exchangeRate: number | null,
     population: number,
-  ): number | null {
-    if (exchangeRate == null) return null;
+  ): number {
+    // FIXED: Return 0 instead of null, and use correct formula
+    if (exchangeRate == null || exchangeRate === 0) return 0;
     const multiplier = Math.random() * (2000 - 1000) + 1000;
-    return population * multiplier * exchangeRate;
+    // CORRECT FORMULA: population × multiplier ÷ exchangeRate
+    return (population * multiplier) / exchangeRate;
   }
+
   private capitalizeFirstWord(str: string) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
+    if (!str) return str;
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   }
+
   async uploadCountry() {
-    console.error('🔴 SERVICE uploadCountry() CALLED - IMMEDIATE'); // Force to stderr
+    console.error('🔴 SERVICE uploadCountry() CALLED - IMMEDIATE');
     this.logger.error('═══════════════════════════════════════');
     this.logger.error('🚀 uploadCountry() called');
     this.logger.error('═══════════════════════════════════════');
@@ -191,9 +200,6 @@ export class CountriesService {
 
       this.logger.error(`⏳ Step 1: Fetching countries from API...`);
       this.logger.error(`📌 URL: ${this.api_countries}`);
-      this.logger.error(
-        `📌 Axios instance timeout: ${this.axios.defaults.timeout}ms`,
-      );
 
       let data: Countries[] = [];
       try {
@@ -219,11 +225,6 @@ export class CountriesService {
           },
           HttpStatus.SERVICE_UNAVAILABLE,
         );
-
-        if (apiErr instanceof Error) {
-          this.logger.error(`   Error: ${apiErr.message}`);
-        }
-        throw apiErr;
       }
 
       if (!Array.isArray(data)) {
@@ -252,35 +253,38 @@ export class CountriesService {
               const nameLower = country.name.toLowerCase();
 
               const existing = await this.db.country.findFirst({
-                where: { name: { equals: nameLower } },
+                where: { name: { equals: nameLower,  } },
               });
 
               if (existing) {
-                const multiplier =
-                  Math.floor(Math.random() * (2000 - 1000 + 1)) + 1000;
+                // FIXED: Correct GDP calculation
+                const multiplier = Math.random() * (2000 - 1000) + 1000;
                 const refetched_estimated_gdp =
-                  country.population *
-                  (existing.exchange_rate || 0) *
-                  multiplier;
+                  existing.exchange_rate && existing.exchange_rate > 0
+                    ? (country.population * multiplier) / existing.exchange_rate
+                    : 0;
 
                 await this.db.country.update({
-                  where: { name: nameLower },
+                  where: { id: existing.id },
                   data: {
-                    capital: country.capital,
-                    region: country.region,
+                    capital: country.capital || null,
+                    region: country.region || null,
                     population: country.population,
+                    // Keep existing currency data
                     currency_code: existing.currency_code,
                     exchange_rate: existing.exchange_rate,
                     estimated_gdp: refetched_estimated_gdp,
-                    flag_url: existing.flag_url,
+                    flag_url: country.flag || null,
+                    last_refreshed_at: new Date(),
                   },
                 });
                 this.logger.debug(`   ✅ Updated: ${country.name}`);
                 updated++;
-               
+
                 return { status: 'updated', country: country.name };
               }
 
+              // Create new country
               const currencyCode = country.currencies?.[0]?.code ?? null;
               const exchangeRate = currencyCode
                 ? await this.getExchangeRate(currencyCode)
@@ -292,19 +296,19 @@ export class CountriesService {
 
               const newCountry = {
                 name: nameLower,
-                capital: country.capital,
-                region: country.region,
+                capital: country.capital || null,
+                region: country.region || null,
                 population: country.population,
                 currency_code: currencyCode,
                 exchange_rate: exchangeRate,
                 estimated_gdp: estimated_gdp,
-                flag_url: country.flag,
+                flag_url: country.flag || null,
               };
 
               await this.db.country.create({ data: newCountry });
               this.logger.debug(`   🆕 Created: ${country.name}`);
               created++;
-           
+
               return { status: 'created', country: country.name };
             } catch (itemErr) {
               this.logger.error(`   ❌ Failed to process ${country.name}`);
@@ -335,7 +339,7 @@ export class CountriesService {
           `   ✓ Batch complete [Created: ${batchCreated}, Updated: ${batchUpdated}, Failed: ${batchFailed}]`,
         );
       }
-         
+
       this.logger.log(`✅ Step 2 Complete: All countries processed`);
       this.logger.log('═══════════════════════════════════════');
       this.logger.log(`🎉 UPLOAD COMPLETE`);
@@ -343,7 +347,9 @@ export class CountriesService {
       this.logger.log(`   Total Updated: ${updated}`);
       this.logger.log(`   Total Processed: ${processed}`);
       this.logger.log('═══════════════════════════════════════');
-         await this.generateSummaryImage();
+
+      await this.generateSummaryImage();
+
       return {
         message: 'Countries data refreshed successfully',
         total_countries: data.length,
@@ -355,154 +361,167 @@ export class CountriesService {
       if (err instanceof Error) {
         this.logger.error(`Error: ${err.message}`);
         this.logger.error(`Stack: ${err.stack}`);
-        throw new HttpException(
-          {
-            error: 'External data source unavailable',
-            details: `Could not fetch data from ${this.api_countries}`,
-          },
-          HttpStatus.SERVICE_UNAVAILABLE,
-        );
       } else {
         this.logger.error(`Error: ${JSON.stringify(err)}`);
       }
       this.logger.error('═══════════════════════════════════════');
 
+      if (err instanceof HttpException) {
+        throw err;
+      }
+
       throw new HttpException(
-        'Failed to upload countries',
-        HttpStatus.INTERNAL_SERVER_ERROR,
+        {
+          error: 'External data source unavailable',
+          details: `Could not fetch data from external API`,
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
   }
+
   async getSingleCountry(name: string) {
     try {
       const data = await this.db.country.findFirst({
-        where: { name },
+        where: {
+          name: {
+            equals: name.toLowerCase(),
+          },
+        },
       });
+
       if (!data) {
-        throw new NotFoundException({
-          error: 'Country not Found',
-        });
-      }
-      return{...data,name:this.capitalizeFirstWord(data.name)};
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      } else {
-        throw new HttpException(
-          'Internal server Error',
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
-    }
-  }
-  async deleteCountry(name: string) {
-    const formatedName = name.toLowerCase()
-    try {
-      return await this.db.country.delete({
-        where: { name:formatedName },
-      });
-    } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      } else {
-        throw new HttpException(
-          'Internal server Error',
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
-    }
-  }
-  async getAllCountries(region: string, currency: string, sort: string) {
-    try {
-      const filters: any = {};
-      const orderBy: any = {};
-      if (!region && !currency && !sort) {
-       const countries = await this.db.country.findMany({ orderBy });
-       const capitalizedCountries = countries.map(country => ({
-  ...country,
-  name: this.capitalizeFirstWord(country.name),
-}));
-    return capitalizedCountries
-      }
-      if(typeof region !== "string" && typeof currency !== 'string' && typeof sort !== 'string'){
-        throw new BadRequestException({
-            error:"Validation Failed",
-            details:{
-                region:"must be a string",
-                currency:"must be a string",
-                sort:"must be a string"
-            }
-        })
-      }
-       if(typeof region !== "string" || typeof currency !== 'string' || typeof sort !== 'string'){
-        throw new BadRequestException({
-            error:"Validation Failed",
-            details:{
-               filters:"Must be a string"
-            }
-        })
-      }
-      if (region) {
-        const formatted_region = this.capitalizeFirstWord(region);
-        this.logger.debug(formatted_region);
-        filters.region = { equals: formatted_region };
-      }
-      if (currency) {
-        filters.currency_code = { equals: currency.toUpperCase() };
-      }
-      if (sort === 'gdp_asc') {
-        orderBy.estimated_gdp = 'asc';
-      } else if (sort === 'gdp_desc') {
-        orderBy.estimated_gdp = 'desc';
-      } else {
-        orderBy.estimated_gdp = 'desc';
-      }
-      const countries = await this.db.country.findMany({
-        where: filters,
-        orderBy: { estimated_gdp: filters.sort },
-      });
-      if (!countries || countries.length === 0) {
         throw new NotFoundException({
           error: 'Country not found',
         });
       }
-      const capitalizedCountries = countries.map(country => ({
-  ...country,
-  name: this.capitalizeFirstWord(country.name),
-}));
 
-      this.logger.debug('country retrieved successfully');
+      return { ...data, name: this.capitalizeFirstWord(data.name) };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          { error: 'Internal server error' },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+  }
+
+  async deleteCountry(name: string) {
+    const formattedName = name.toLowerCase();
+    try {
+      // FIXED: Check if country exists first
+      const country = await this.db.country.findFirst({
+        where: {
+          name: {
+            equals: formattedName,
+          },
+        },
+      });
+
+      if (!country) {
+        throw new NotFoundException({
+          error: 'Country not found',
+        });
+      }
+
+      return await this.db.country.delete({
+        where: { id: country.id },
+      });
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          { error: 'Internal server error' },
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+  }
+
+  async getAllCountries(region?: string, currency?: string, sort?: string) {
+    try {
+      const filters: any = {};
+      let orderBy: any = undefined;
+
+      // FIXED: Remove the problematic type checking that was causing 400 errors
+      // Build filters only if parameters are provided and valid
+      if (region && typeof region === 'string' && region.trim() !== '') {
+        filters.region = {
+          equals: this.capitalizeFirstWord(region),
+          mode: 'insensitive',
+        };
+      }
+
+      if (currency && typeof currency === 'string' && currency.trim() !== '') {
+        filters.currency_code = {
+          equals: currency.toUpperCase(),
+          mode: 'insensitive',
+        };
+      }
+
+      // FIXED: Sorting
+      if (sort === 'gdp_asc') {
+        orderBy = { estimated_gdp: 'asc' };
+      } else if (sort === 'gdp_desc') {
+        orderBy = { estimated_gdp: 'desc' };
+      }
+
+      const countries = await this.db.country.findMany({
+        where: Object.keys(filters).length > 0 ? filters : undefined,
+        orderBy: orderBy,
+      });
+
+      // Capitalize country names for display
+      const capitalizedCountries = countries.map((country) => ({
+        ...country,
+        name: this.capitalizeFirstWord(country.name),
+      }));
+
+      this.logger.debug('Countries retrieved successfully');
       return capitalizedCountries;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       } else {
+        this.logger.error('Error in getAllCountries:', error);
         throw new HttpException(
-          'Internal server Error',
+          { error: 'Internal server error' },
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
     }
   }
+
   async getStatus() {
     try {
-      const last_refreshed_at = new Date();
       const total_countries = await this.db.country.count();
+      
+      // Get the actual last refresh time from the database
+      const lastRefreshed = await this.db.country.findFirst({
+        orderBy: { last_refreshed_at: 'desc' },
+        select: { last_refreshed_at: true },
+      });
+
       return {
         total_countries,
-        last_refreshed_at,
+        last_refreshed_at: lastRefreshed?.last_refreshed_at || new Date(),
       };
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       } else {
         throw new HttpException(
-          'Internal server Error',
+          { error: 'Internal server error' },
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
     }
   }
+
   async getSummaryImage() {
     try {
       const imagePath = path.join(this.cacheDir, 'summary.png');
@@ -517,7 +536,7 @@ export class CountriesService {
         throw error;
       } else {
         throw new HttpException(
-          'Internal server Error',
+          { error: 'Internal server error' },
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
