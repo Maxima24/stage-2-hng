@@ -235,7 +235,7 @@ export class CountriesService {
       this.logger.log(
         `⏳ Step 2: Processing ${data.length} countries in batches...`,
       );
-      const batchSize = 30;
+      const batchSize = 100;
       let processed = 0;
       let created = 0;
       let updated = 0;
@@ -277,7 +277,7 @@ export class CountriesService {
                 });
                 this.logger.debug(`   ✅ Updated: ${country.name}`);
                 updated++;
-                await this.generateSummaryImage();
+               
                 return { status: 'updated', country: country.name };
               }
 
@@ -304,7 +304,7 @@ export class CountriesService {
               await this.db.country.create({ data: newCountry });
               this.logger.debug(`   🆕 Created: ${country.name}`);
               created++;
-              await this.generateSummaryImage();
+           
               return { status: 'created', country: country.name };
             } catch (itemErr) {
               this.logger.error(`   ❌ Failed to process ${country.name}`);
@@ -335,7 +335,7 @@ export class CountriesService {
           `   ✓ Batch complete [Created: ${batchCreated}, Updated: ${batchUpdated}, Failed: ${batchFailed}]`,
         );
       }
-
+         
       this.logger.log(`✅ Step 2 Complete: All countries processed`);
       this.logger.log('═══════════════════════════════════════');
       this.logger.log(`🎉 UPLOAD COMPLETE`);
@@ -343,7 +343,7 @@ export class CountriesService {
       this.logger.log(`   Total Updated: ${updated}`);
       this.logger.log(`   Total Processed: ${processed}`);
       this.logger.log('═══════════════════════════════════════');
-
+         await this.generateSummaryImage();
       return {
         message: 'Countries data refreshed successfully',
         total_countries: data.length,
