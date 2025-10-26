@@ -36,9 +36,9 @@ export interface ExchangeRateData {
   base_code: string;
   rates: Record<string, number>;
 }
-export interface TopCountries{
-    name:string,
-    estimated_gdp:number|null
+export interface TopCountries {
+  name: string;
+  estimated_gdp: number | null;
 }
 
 @Injectable()
@@ -93,7 +93,10 @@ export class CountriesService {
     console.log(`Summary image saved to ${imagePath}`);
   }
 
-  private generateSVG(totalCountries: number, topCountries: TopCountries[]): string {
+  private generateSVG(
+    totalCountries: number,
+    topCountries: TopCountries[],
+  ): string {
     const yPos = 210; // starting vertical position for the country list
     const lineSpacing = 40; // space between each country line
     const width = 800;
@@ -101,18 +104,18 @@ export class CountriesService {
     const timestamp = new Date().toLocaleString();
 
     const countryItems = topCountries
-  .map((country, index) => {
-    const gdpBillions = (country.estimated_gdp! / 1e9).toFixed(2);
-    const y = yPos + index * lineSpacing;
-    return `
+      .map((country, index) => {
+        const gdpBillions = (country.estimated_gdp! / 1e9).toFixed(2);
+        const y = yPos + index * lineSpacing;
+        return `
       <text x="60" y="${y}" font-family="Arial" font-size="18" fill="#ffffff">
         ${index + 1}. ${country.name}: $${gdpBillions}B
       </text>
     `;
-  })
-  .join('');
+      })
+      .join('');
 
-return `
+    return `
   <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <!-- Background -->
     <rect width="${width}" height="${height}" fill="#1a1a2e"/>
@@ -169,9 +172,8 @@ return `
     const multiplier = Math.random() * (2000 - 1000) + 1000;
     return population * multiplier * exchangeRate;
   }
-  private capitalizeFirstWord(str:string){
-
-    return str.charAt(0).toUpperCase()+str.slice(1)
+  private capitalizeFirstWord(str: string) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
   }
   async uploadCountry() {
     console.error('🔴 SERVICE uploadCountry() CALLED - IMMEDIATE'); // Force to stderr
@@ -359,113 +361,125 @@ return `
       );
     }
   }
-  async getSingleCountry(name:string){
-     try{
-         const data = await this.db.country.findFirst({
-        where:{name}
-    })
-    if(!data){
-        throw new NotFoundException({
-            error:"Country not Found"
-        })
-    }   
-    return data
-    }catch(error){
-        if(error instanceof HttpException){
-            throw error
-        }else{
-            throw new HttpException("Internal server Error",HttpStatus.INTERNAL_SERVER_ERROR)
-        }
-    }
-   
-  }
-  async deleteCountry(name:string){
-     try{
-         return await this.db.country.delete({
-        where:{name}
-    })
-    }catch(error){
-        if(error instanceof HttpException){
-            throw error
-        }else{
-            throw new HttpException("Internal server Error",HttpStatus.INTERNAL_SERVER_ERROR)
-        }
-    }
-  
-
-  }
-  async getAllCountries(region:string,currency:string,sort:string){
-     try{
-           const filters:any ={}
-        if(!region && !currency && !sort){
-            return await this.db.country.findMany({})
-        }
-        if(region){
-            const formatted_region =this.capitalizeFirstWord(region)
-            this.logger.debug(formatted_region)
-            filters.region ={equals:formatted_region}
-        }
-        if(currency){
-            filters.currency_code ={equals:currency.toUpperCase()}
-        }
-        if(sort === "gdp_asc"){
-            filters.sort = "asc"
-        }else if(sort === "gdp_desc"){
-            filters.sort ="desc"
-        }
-        const country = await this.db.country.findMany({
-            where:filters,
-            orderBy:{estimated_gdp:filters.sort}
-         })
-          if(!country || country.length === 0){
-            throw new NotFoundException({
-                error:"Country not found"
-            })
-         }
-         this.logger.debug("country retrieved successfully")
-           return country
-    }catch(error){
-        if(error instanceof HttpException){
-            throw error
-        }else{
-            throw new HttpException("Internal server Error",HttpStatus.INTERNAL_SERVER_ERROR)
-        }
-    }
-      
-  }
-  async getStatus(){
-    try{
-          const last_refreshed_at =  new Date()
-    const total_countries =  await this.db.country.count()
-    return {
-        total_countries,
-        last_refreshed_at
-    }
-    }catch(error){
-        if(error instanceof HttpException){
-            throw error
-        }else{
-            throw new HttpException("Internal server Error",HttpStatus.INTERNAL_SERVER_ERROR)
-        }
-    }
-  
-  }
-  async getSummaryImage(){
-     try{
-          const imagePath = path.join(this.cacheDir, 'summary.png');
-      if (!fs.existsSync(imagePath)) {
-      throw new NotFoundException({
-        error:"Summary image not found"
+  async getSingleCountry(name: string) {
+    try {
+      const data = await this.db.country.findFirst({
+        where: { name },
       });
+      if (!data) {
+        throw new NotFoundException({
+          error: 'Country not Found',
+        });
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          'Internal server Error',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
     }
+  }
+  async deleteCountry(name: string) {
+    try {
+      return await this.db.country.delete({
+        where: { name },
+      });
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          'Internal server Error',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+  }
+  async getAllCountries(region: string, currency: string, sort: string) {
+    try {
+      const filters: any = {};
+      const orderBy: any = {};
+      if (!region && !currency && !sort) {
+        return await this.db.country.findMany({orderBy});
+      }
+      if (region) {
+        const formatted_region = this.capitalizeFirstWord(region);
+        this.logger.debug(formatted_region);
+        filters.region = { equals: formatted_region };
+      }
+      if (currency) {
+        filters.currency_code = { equals: currency.toUpperCase() };
+      }
+      if (sort === 'gdp_asc') {
+        orderBy.estimated_gdp = 'asc';
+      } else if (sort === 'gdp_desc') {
+        orderBy.estimated_gdp = 'desc';
+      } else {
+        orderBy.estimated_gdp = 'desc';
+      }
+      const country = await this.db.country.findMany({
+        where: filters,
+        orderBy: { estimated_gdp: filters.sort },
+      });
+      if (!country || country.length === 0) {
+        throw new NotFoundException({
+          error: 'Country not found',
+        });
+      }
+      this.logger.debug('country retrieved successfully');
+      return country;
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          'Internal server Error',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+  }
+  async getStatus() {
+    try {
+      const last_refreshed_at = new Date();
+      const total_countries = await this.db.country.count();
+      return {
+        total_countries,
+        last_refreshed_at,
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          'Internal server Error',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+  }
+  async getSummaryImage() {
+    try {
+      const imagePath = path.join(this.cacheDir, 'summary.png');
+      if (!fs.existsSync(imagePath)) {
+        throw new NotFoundException({
+          error: 'Summary image not found',
+        });
+      }
       return fs.readFileSync(imagePath);
-    }catch(error){
-        if(error instanceof HttpException){
-            throw error
-        }else{
-            throw new HttpException("Internal server Error",HttpStatus.INTERNAL_SERVER_ERROR)
-        }
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      } else {
+        throw new HttpException(
+          'Internal server Error',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
     }
-   
   }
 }
