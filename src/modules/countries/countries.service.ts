@@ -234,7 +234,7 @@ export class CountriesService {
       this.logger.log(
         `⏳ Step 2: Processing ${data.length} countries in batches...`,
       );
-      const batchSize = 10;
+      const batchSize = 30;
       let processed = 0;
       let created = 0;
       let updated = 0;
@@ -343,13 +343,24 @@ export class CountriesService {
       this.logger.log(`   Total Processed: ${processed}`);
       this.logger.log('═══════════════════════════════════════');
 
-      return { created, updated, total: processed };
+      return {
+        message: 'Countries data refreshed successfully',
+        total_countries: data.length,
+        last_refreshed_at: new Date(),
+      };
     } catch (err) {
       this.logger.error('═══════════════════════════════════════');
       this.logger.error('❌ UPLOAD FAILED');
       if (err instanceof Error) {
         this.logger.error(`Error: ${err.message}`);
         this.logger.error(`Stack: ${err.stack}`);
+        throw new HttpException(
+          {
+            error: 'External data source unavailable',
+            details: `Could not fetch data from ${this.api_countries}`,
+          },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
       } else {
         this.logger.error(`Error: ${JSON.stringify(err)}`);
       }
@@ -371,7 +382,7 @@ export class CountriesService {
           error: 'Country not Found',
         });
       }
-      return data;
+      return{...data,name:this.capitalizeFirstWord(data.name)};
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
@@ -404,7 +415,12 @@ export class CountriesService {
       const filters: any = {};
       const orderBy: any = {};
       if (!region && !currency && !sort) {
-        return await this.db.country.findMany({orderBy});
+       const countries = await this.db.country.findMany({ orderBy });
+       const capitalizedCountries = countries.map(country => ({
+  ...country,
+  name: this.capitalizeFirstWord(country.name),
+}));
+    return capitalizedCountries
       }
       if (region) {
         const formatted_region = this.capitalizeFirstWord(region);
@@ -421,17 +437,22 @@ export class CountriesService {
       } else {
         orderBy.estimated_gdp = 'desc';
       }
-      const country = await this.db.country.findMany({
+      const countries = await this.db.country.findMany({
         where: filters,
         orderBy: { estimated_gdp: filters.sort },
       });
-      if (!country || country.length === 0) {
+      if (!countries || countries.length === 0) {
         throw new NotFoundException({
           error: 'Country not found',
         });
       }
+      const capitalizedCountries = countries.map(country => ({
+  ...country,
+  name: this.capitalizeFirstWord(country.name),
+}));
+
       this.logger.debug('country retrieved successfully');
-      return country;
+      return capitalizedCountries;
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;

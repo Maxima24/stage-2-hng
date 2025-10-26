@@ -62,6 +62,9 @@ async getImage(@Res() res:Response){
       if(!deleted){
            throw new NotFoundException(`Country with Name ${name} not found`);
       }
+      return {
+        message:"Country deleted successfully"
+      }
  }
 
 }

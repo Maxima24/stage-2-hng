@@ -8,23 +8,23 @@
 // code:
 // }
 generator client {
-  provider = "prisma-client-js"
+    provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
-}
-model Country {
-  id          String  @unique @default(uuid())
-  name        String  @unique
-  capital     String? 
-  region      String?
-  population  Int
-  flag_url        String?
-  estimated_gdp Float?
-  currency_code String?
-   exchange_rate Float?
-   last_refreshed_at DateTime @updatedAt
+    provider = "mysql"
+    url      = env("DATABASE_URL")
 }
 
+model Country {
+    id                Int      @id @default(autoincrement())
+    name              String   @unique
+    capital           String?
+    region            String?
+    population        Int
+    flag_url          String?
+    estimated_gdp     Float?
+    currency_code     String?
+    exchange_rate     Float?
+    last_refreshed_at DateTime @updatedAt
+}
