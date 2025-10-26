@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Logger,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { CUSTOM_AXIOS } from './../http-config/http-config.module';
 import type { AxiosInstance } from 'axios';
@@ -395,9 +396,10 @@ export class CountriesService {
     }
   }
   async deleteCountry(name: string) {
+    const formatedName = name.toLowerCase()
     try {
       return await this.db.country.delete({
-        where: { name },
+        where: { name:formatedName },
       });
     } catch (error) {
       if (error instanceof HttpException) {
@@ -421,6 +423,24 @@ export class CountriesService {
   name: this.capitalizeFirstWord(country.name),
 }));
     return capitalizedCountries
+      }
+      if(typeof region !== "string" && typeof currency !== 'string' && typeof sort !== 'string'){
+        throw new BadRequestException({
+            error:"Validation Failed",
+            details:{
+                region:"must be a string",
+                currency:"must be a string",
+                sort:"must be a string"
+            }
+        })
+      }
+       if(typeof region !== "string" || typeof currency !== 'string' || typeof sort !== 'string'){
+        throw new BadRequestException({
+            error:"Validation Failed",
+            details:{
+               filters:"Must be a string"
+            }
+        })
       }
       if (region) {
         const formatted_region = this.capitalizeFirstWord(region);
