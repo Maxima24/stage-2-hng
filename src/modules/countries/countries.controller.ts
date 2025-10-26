@@ -17,7 +17,7 @@ import type {Response} from 'express'
 export class CountriesController {
   constructor(private readonly countryService: CountriesService) {}
 
-  @Post('/refresh')
+  @Post('refresh')
   @HttpCode(201)
   async uploadCountry() {
     console.error('🔴 CONTROLLER uploadCountry() CALLED');
@@ -31,7 +31,7 @@ export class CountriesController {
       throw error;
     }
   }
-  @Get('/image')
+  @Get('image')
 @HttpCode(200)
 async getImage(@Res() res:Response){
     const imageBuffer = await this.countryService.getSummaryImage()
